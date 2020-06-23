@@ -1,0 +1,164 @@
+---
+title: "Predicting the future"
+author: "Gabrielle Martinez (Pace University)"
+date: "6/23/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(scales)
+library(broom)
+library(modelr)
+library(tidyverse)
+
+theme_set(theme_bw())
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Data
+
+```{r data}
+motor_vehicles <- read.csv('merged.csv')
+motor_vehicles %>%
+  mutate(Period = as.Date(Period)) -> motor_vehicles
+
+motor_vehicles %>% 
+  mutate(last_month_sales = lag(sales, 1), last_year_sales = lag(sales, 12)) -> motor_vehicles
+```
+
+## Make the Baseline Model
+
+```{r model}
+
+#Let yt be the log of the observation at time t
+base_model <- lm(log(sales) ~ log(last_month_sales) + log(last_year_sales), data = motor_vehicles)
+
+summary(base_model)
+
+tidy(base_model)
+glance(base_model)
+
+```
+
+## Make the Trends Model
+```{r trends}
+
+trends_model <- lm(log(sales) ~ log(last_month_sales) + log(last_year_sales) + suvs + insurance, data = motor_vehicles)
+
+tidy(trends_model)
+glance(trends_model)
+
+```
+
+## Plot in-sample forcasting
+```{r plot}
+
+motor_vehicles %>% 
+  add_predictions(base_model, "base") %>%
+  add_predictions(trends_model, "trend") -> motor_vehicles_in_sample
+
+motor_vehicles_in_sample %>%
+  filter(Period >= "2005-06-01") %>%
+  ggplot(aes(x=Period, y = log(sales))) +
+  geom_line() + 
+  geom_line(aes(y=base), color = "red", linetype="dashed") +
+  geom_line(aes(y=trend), alpha = .5)
+
+
+  
+
+```
+
+
+## Out of Sample forecasting using Rolling window method
+
+> To check this, we use a rolling window forecast where we estimate the model using
+the data for periods k through t − 1 and then forecast yt using yt−1, yt−12, and the
+contemporaneous values of the Trends variables as predictors. Since the series is actually
+released 2 weeks after the end of each month, this gives us a meaningful forecasting lead.
+The value of k is chosen so that there are a reasonable number of observations for the
+first regression in the sequence. In this case we chose k = 17, which implied the forecasts
+start in 2005-06-01.
+
+Let's start with the base model
+```{r rollingwindow}
+
+#split the data 1-17 for first model
+
+  #top_17_mv <- 
+  #  filter(motor_vehicles ,Period < "2005-06-01")
+
+#train the first model
+
+base_line_out <- lm(log(sales) ~ log(last_month_sales) + log(last_year_sales), data=motor_vehicles[1:17,])
+
+trend_line_out <- lm(log(sales) ~ log(last_month_sales) + log(last_year_sales) + suvs + insurance, data=motor_vehicles[1:17,])
+
+#tidy(model_01)
+#glance(model_01)
+
+#predictions <- add_row(
+# add_predictions(motor_vehicles[17,], model_01, "base_pred")) #-> predictions
+
+#predictions <- add_predictions(motor_vehicles[18,], model_01, "base_pred")
+
+predictions <-  motor_vehicles[18,] %>% add_predictions(base_line_out, "base_pred") %>% add_predictions(trend_line_out, "trend_pred")
+
+
+#for loop adding next month data to training split
+
+rows <- 18:90
+
+for (row in rows) {
+  
+  base_line_out <- 
+     lm(log(sales) ~ log(last_month_sales) + log(last_year_sales), data=motor_vehicles[1:row,])
+
+  trend_line_out <- 
+    lm(log(sales) ~ log(last_month_sales) + log(last_year_sales) + suvs + insurance, data=motor_vehicles[1:row,])
+    
+ # predictions <- add_row(predictions, add_predictions(motor_vehicles[row+1,], model_01, "base_pred"))
+  
+  predictions <- 
+    add_row(predictions, add_predictions(motor_vehicles[row+1, ], base_line_out, "base_pred") %>% add_predictions(trend_line_out, "trend_pred"))
+  
+}
+
+#plot
+
+predictions %>%
+  ggplot() +
+  geom_line(aes(x = Period, y = log(sales), color = "actual")) +
+  geom_line(aes(x = Period, y = base_pred, color = "base"), linetype = "dashed") +
+  geom_line(aes(x = Period, y = trend_pred, color = "trends")) +
+  scale_colour_manual("", 
+                      breaks = c("actual", "base", "trends"),
+                      values = c("black", "red", "grey")) +
+  xlab("log(mvs")+
+  ylab("date")
+
+```
+
+
+## Recreating the results from the original data
+
+>Census Data found here: https://www.census.gov/econ/currentdata/export/csv?programCode=MARTS&timeSlotType=12&startYear=1992&endYear=2020&categoryCode=441&dataTypeCode=SM&geoLevelCode=US&adjusted=no&errorData=no&internal=false
+
+
+```{r load_census}
+
+census <- read.csv("SeriesReport-202006.csv")
+
+census %>% 
+  mutate(Period = as.Date(Period, format= "%m/%d/%Y")) -> census
+
+
+
+
+```
+
+
+
+
+
