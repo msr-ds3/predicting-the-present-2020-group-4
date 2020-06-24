@@ -25,6 +25,7 @@ motor_vehicles %>%
 
 motor_vehicles %>% 
   mutate(last_month_sales = lag(sales, 1), last_year_sales = lag(sales, 12)) -> motor_vehicles
+
 ```
 
 ## Make the Baseline Model
@@ -34,7 +35,7 @@ motor_vehicles %>%
 #Let yt be the log of the observation at time t
 base_model <- lm(log(sales) ~ log(last_month_sales) + log(last_year_sales), data = motor_vehicles)
 
-summary(base_model)
+#summary(base_model)
 
 tidy(base_model)
 glance(base_model)
@@ -66,20 +67,18 @@ motor_vehicles_in_sample %>%
   geom_line(aes(y=trend), alpha = .5)
 
 
-  
-
 ```
 
 
 ## Out of Sample forecasting using Rolling window method
 
-> To check this, we use a rolling window forecast where we estimate the model using
+> "To check this, we use a rolling window forecast where we estimate the model using
 the data for periods k through t − 1 and then forecast yt using yt−1, yt−12, and the
 contemporaneous values of the Trends variables as predictors. Since the series is actually
 released 2 weeks after the end of each month, this gives us a meaningful forecasting lead.
 The value of k is chosen so that there are a reasonable number of observations for the
 first regression in the sequence. In this case we chose k = 17, which implied the forecasts
-start in 2005-06-01.
+start in 2005-06-01." (Choi & Varian, 2011)
 
 Let's start with the base model
 ```{r rollingwindow}
@@ -125,8 +124,8 @@ for (row in rows) {
   
 }
 
-#plot
 
+#plot
 predictions %>%
   ggplot() +
   geom_line(aes(x = Period, y = log(sales), color = "actual")) +
@@ -135,17 +134,33 @@ predictions %>%
   scale_colour_manual("", 
                       breaks = c("actual", "base", "trends"),
                       values = c("black", "red", "grey")) +
-  xlab("log(mvs")+
-  ylab("date")
+  ylab("log(mvs)")+
+  xlab("Index")
 
 ```
 
 
+Let's calculate the Mean Absolute Error for the above. 
+```{r}
+maebase <-
+  mean(abs(predictions$base_pred - log(predictions$sales)))  #MAE for the baseline model
+maetrends <-
+  mean(abs(predictions$trend_pred - log(predictions$sales))) #MAE for the trends model
+
+((maetrends - maebase)/maebase)*100
+  
+```
+
+The MAE for the base model is `r maebase` while the MAE for the trends model `r maetrends`. There is a 10.66% improvement between the base and trends model. This is consistent with the paper's results. 
+
+
 ## Recreating the results from the original data
 
->Census Data found here: https://www.census.gov/econ/currentdata/export/csv?programCode=MARTS&timeSlotType=12&startYear=1992&endYear=2020&categoryCode=441&dataTypeCode=SM&geoLevelCode=US&adjusted=no&errorData=no&internal=false
+>Census Data found [here](https://www.census.gov/econ/currentdata/export/csv?programCode=MARTS&timeSlotType=12&startYear=1992&endYear=2020&categoryCode=441&dataTypeCode=SM&geoLevelCode=US&adjusted=no&errorData=no&internal=false)
 
+> Using Google Trends results from 1/1/2004 - 7/1/2011 found [here](https://trends.google.com/trends/explore?cat=467&date=2004-01-01%202011-07-01&geo=US) and [here](https://trends.google.com/trends/explore?cat=610&date=2004-01-01%202011-07-01&geo=US)
 
+Let's load in the data for cleaning and reformating
 ```{r load_census}
 
 census <- read.csv("census_data.csv")
@@ -154,19 +169,243 @@ census %>%
   mutate(Period = as.Date(Period, format= "%m/%d/%Y")) %>%
   rename("period"= "Period", "sales"="Value") -> census
 
-
-trends_data_suv<- read.csv("trucks_suv.csv")
+#load trucks and suv trends data
+trends_data_suv<- read.csv("trucks_suv_2011.csv")
 
 trends_data_suv %>%
-  rename("suv"="Trucks...SUVs...United.States.") %>%
+  rename("suv"="Geo..United.States") %>%
   mutate(Month = paste(Month, "-01", sep=""), 
          Month = as.Date(Month, format="%Y-%m-%d"))-> trends_data_suv
 
-left_join(census, trends_data_suv, by=c("period"="Month"))
-           
-           
+inner_join(census, trends_data_suv, by=c("period"="Month")) -> motor_vehicles
+
+#load auto insurance data
+trends_insurance<- read.csv("insurance_2011.csv", F)
+
+trends_insurance %>% 
+  rename("date"="V1","insurance"= "V2") %>%
+  mutate(date = paste(date, "-01", sep=""), 
+         date = as.Date(date, format="%Y-%m-%d"))-> trends_insurance
+
+inner_join(motor_vehicles, trends_insurance, by=c("period"="date")) -> motor_vehicles
+      
 ```
 
+
+### Remaking the in-sample models
+```{r}
+#adding lag columns
+
+motor_vehicles %>% 
+  mutate(last_month_sales = lag(sales, 1), last_year_sales = lag(sales, 12)) -> motor_vehicles
+
+#base model without trends data
+base_model <- lm(log(sales) ~ log(last_month_sales) + log(last_year_sales), data = motor_vehicles)
+
+tidy(base_model)
+glance(base_model)
+
+#trends model with trends data
+trends_model <- lm(log(sales) ~ log(last_month_sales) + log(last_year_sales) + suv + insurance, data = motor_vehicles)
+
+tidy(trends_model)
+glance(trends_model)
+
+```
+
+### Out of sample forcasting model
+
+```{r outofsample}
+#first model based on the first 17 months
+base_line_out <- lm(log(sales) ~ log(last_month_sales) + log(last_year_sales), data=motor_vehicles[1:17,])
+
+trend_line_out <- lm(log(sales) ~ log(last_month_sales) + log(last_year_sales) + suv + insurance, data=motor_vehicles[1:17,])
+
+#tidy(trend_line_out)
+#glance(trend_line_out)
+
+predictions <-  motor_vehicles[18,] %>% add_predictions(base_line_out, "base_pred") %>% add_predictions(trend_line_out, "trend_pred")
+
+
+#for loop for the rolling window
+
+mae_base <- c(mae(base_line_out, predictions))
+mae_trend <- c(mae(trend_line_out, predictions))
+
+rows <- 18:90
+for (row in rows) {
+  
+  base_line_out <- 
+     lm(log(sales) ~ log(last_month_sales) + log(last_year_sales), data=motor_vehicles[1:row,])
+
+  trend_line_out <- 
+    lm(log(sales) ~ log(last_month_sales) + log(last_year_sales) + suv + insurance, data=motor_vehicles[1:row,])
+    
+  predictions <- 
+    add_row(predictions, add_predictions(motor_vehicles[row+1, ], base_line_out, "base_pred") %>% add_predictions(trend_line_out, "trend_pred"))
+  
+  mae_base <- c(mae_base, mae(base_line_out, predictions))
+  mae_trend <- c(mae_trend, mae(trend_line_out, predictions))
+  
+}
+
+#plot
+predictions %>%
+  ggplot() +
+  geom_line(aes(x = period, y = log(sales), color = "actual")) +
+  geom_line(aes(x = period, y = base_pred, color = "base"), linetype = "dashed") +
+  geom_line(aes(x = period, y = trend_pred, color = "trends")) +
+  scale_colour_manual("", 
+                      breaks = c("actual", "base", "trends"),
+                      values = c("black", "red", "grey")) +
+  ylab("log(mvs)")+
+  xlab("Index")
+
+```
+
+
+### Calculating errors
+
+```{r errors}
+maebase <-
+  mean(abs(predictions$base_pred - log(predictions$sales)))
+
+maetrends <-
+  mean(abs(predictions$trend_pred - log(predictions$sales)))
+
+((maetrends - maebase)/maebase)*100
+
+```
+
+The MAE for the base model is `r maebase` while the MAE for the trends model `r maetrends`. There is a 7.21%  between the base and trends model. 
+
+
+## Expansion 1: Is this technique useful today?
+
+Let's use that same census data that includes May 2020 from earlier. And load in Google Trends data from 2004-2020
+
+```{r}
+
+trends_data_suv <- read.csv("trucks_suv.csv")
+trends_insurance <- read.csv("auto_insurance.csv")
+
+#reformat trends data
+
+trends_data_suv %>%
+  rename("suv"="Geo..United.States") %>%
+  mutate(Month = paste(Month, "-01", sep=""), 
+         Month = as.Date(Month, format="%Y-%m-%d"))-> trends_data_suv
+
+inner_join(census, trends_data_suv, by=c("period"="Month")) -> motor_vehicles
+
+trends_insurance %>% 
+  rename("date"="Month","insurance"= "Geo..United.States") %>%
+  mutate(date = paste(date, "-01", sep=""), 
+         date = as.Date(date, format="%Y-%m-%d"))-> trends_insurance
+
+inner_join(motor_vehicles, trends_insurance, by=c("period"="date")) -> motor_vehicles
+
+#filter instances where sales is blank June 2020 not yet available
+motor_vehicles %>%
+  filter(!is.na(sales)) -> motor_vehicles
+
+
+#adding lag columns
+motor_vehicles %>% 
+  mutate(last_month_sales = lag(sales, 1), last_year_sales = lag(sales, 12)) -> motor_vehicles
+
+```
+
+
+### In-sample model
+
+```{r}
+
+#base model without trends data
+base_model <- lm(log(sales) ~ log(last_month_sales) + log(last_year_sales), data = motor_vehicles)
+
+tidy(base_model)
+glance(base_model)
+
+#trends model with trends data
+trends_model <- lm(log(sales) ~ log(last_month_sales) + log(last_year_sales) + suv + insurance, data = motor_vehicles)
+
+tidy(trends_model)
+glance(trends_model)
+
+```
+
+
+
+### Plot in-sample forecasting
+
+```{r}
+motor_vehicles %>% 
+  add_predictions(base_model, "base") %>%
+  add_predictions(trends_model, "trend") -> motor_vehicles_in_sample
+
+motor_vehicles_in_sample %>%
+  ggplot(aes(x=period, y = log(sales))) +
+  geom_line() + 
+  geom_line(aes(y=base), color = "red", linetype="dashed") +
+  geom_line(aes(y=trend), alpha = .5) +
+  xlab("Index") +
+  ylab("log(mvp)")
+
+```
+
+The in-sample model predicts a rise in sales when in actuality, sales have sharply declined in the beginning of 2020, likely due to the Covid-19 pandemic. I thought using trends would have more accurately predicted the dip in sales but it is rather the opposite. Let's see how our out-of-sample forecasting model fairs. 
+
+### Out of sample model
+
+```{r}
+
+#first model based on the first 17 months
+base_line_out <- lm(log(sales) ~ log(last_month_sales) + log(last_year_sales), data=motor_vehicles[1:17,])
+
+trend_line_out <- lm(log(sales) ~ log(last_month_sales) + log(last_year_sales) + suv + insurance, data=motor_vehicles[1:17,])
+
+#tidy(trend_line_out)
+#glance(trend_line_out)
+
+predictions <-  motor_vehicles[18,] %>% add_predictions(base_line_out, "base_pred") %>% add_predictions(trend_line_out, "trend_pred")
+
+
+#for loop for the rolling window
+
+mae_base <- c(mae(base_line_out, predictions))
+mae_trend <- c(mae(trend_line_out, predictions))
+
+rows <- 18:90
+for (row in rows) {
+  
+  base_line_out <- 
+     lm(log(sales) ~ log(last_month_sales) + log(last_year_sales), data=motor_vehicles[1:row,])
+
+  trend_line_out <- 
+    lm(log(sales) ~ log(last_month_sales) + log(last_year_sales) + suv + insurance, data=motor_vehicles[1:row,])
+    
+  predictions <- 
+    add_row(predictions, add_predictions(motor_vehicles[row+1, ], base_line_out, "base_pred") %>% add_predictions(trend_line_out, "trend_pred"))
+  
+  mae_base <- c(mae_base, mae(base_line_out, predictions))
+  mae_trend <- c(mae_trend, mae(trend_line_out, predictions))
+  
+}
+
+#plot
+predictions %>%
+  ggplot() +
+  geom_line(aes(x = period, y = log(sales), color = "actual")) +
+  geom_line(aes(x = period, y = base_pred, color = "base"), linetype = "dashed") +
+  geom_line(aes(x = period, y = trend_pred, color = "trends")) +
+  scale_colour_manual("", 
+                      breaks = c("actual", "base", "trends"),
+                      values = c("black", "red", "grey")) +
+  ylab("log(mvs)")+
+  xlab("Index")
+
+```
 
 
 
