@@ -148,14 +148,23 @@ predictions %>%
 
 ```{r load_census}
 
-census <- read.csv("SeriesReport-202006.csv")
+census <- read.csv("census_data.csv")
 
 census %>% 
-  mutate(Period = as.Date(Period, format= "%m/%d/%Y")) -> census
+  mutate(Period = as.Date(Period, format= "%m/%d/%Y")) %>%
+  rename("period"= "Period", "sales"="Value") -> census
 
 
+trends_data_suv<- read.csv("trucks_suv.csv")
 
+trends_data_suv %>%
+  rename("suv"="Trucks...SUVs...United.States.") %>%
+  mutate(Month = paste(Month, "-01", sep=""), 
+         Month = as.Date(Month, format="%Y-%m-%d"))-> trends_data_suv
 
+left_join(census, trends_data_suv, by=c("period"="Month"))
+           
+           
 ```
 
 
