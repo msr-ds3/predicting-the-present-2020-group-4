@@ -16,6 +16,7 @@ theme_set(theme_bw())
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+# Replicating Using Author's Unadjusted Cleaned Data
 ## Load Data
 
 ```{r data}
@@ -154,7 +155,7 @@ maetrends <-
 The MAE for the base model is `r maebase` while the MAE for the trends model `r maetrends`. There is a 10.66% improvement between the base and trends model. This is consistent with the paper's results. 
 
 
-## Recreating the results from the original data
+# Recreating the results using the original source data
 
 >Census Data found [here](https://www.census.gov/econ/currentdata/export/csv?programCode=MARTS&timeSlotType=12&startYear=1992&endYear=2020&categoryCode=441&dataTypeCode=SM&geoLevelCode=US&adjusted=no&errorData=no&internal=false)
 
@@ -229,8 +230,8 @@ predictions <-  motor_vehicles[18,] %>% add_predictions(base_line_out, "base_pre
 
 #for loop for the rolling window
 
-mae_base <- c(mae(base_line_out, predictions))
-mae_trend <- c(mae(trend_line_out, predictions))
+#mae_base <- c(mae(base_line_out, predictions))
+#mae_trend <- c(mae(trend_line_out, predictions))
 
 rows <- 18:90
 for (row in rows) {
@@ -244,8 +245,8 @@ for (row in rows) {
   predictions <- 
     add_row(predictions, add_predictions(motor_vehicles[row+1, ], base_line_out, "base_pred") %>% add_predictions(trend_line_out, "trend_pred"))
   
-  mae_base <- c(mae_base, mae(base_line_out, predictions))
-  mae_trend <- c(mae_trend, mae(trend_line_out, predictions))
+#  mae_base <- c(mae_base, mae(base_line_out, predictions))
+#  mae_trend <- c(mae_trend, mae(trend_line_out, predictions))
   
 }
 
@@ -277,10 +278,25 @@ maetrends <-
 
 ```
 
-The MAE for the base model is `r maebase` while the MAE for the trends model `r maetrends`. There is a 7.21%  between the base and trends model. 
+The MAE for the base model is `r maebase` while the MAE for the trends model `r maetrends`. There is a 7.21% greater error for the trends model compared to the base model. 
+
+```{r}
+# Calculate the MAE during recession (December 2007 through June 2009)
+
+recession <- predictions %>% filter(period > '2007-11-01' & period <= '2009-06-01')
+
+mae_base_re <- mean(abs(recession$base_pred - log(recession$sales)))
+
+mae_trend_re <- mean(abs(recession$trend_pred - log(recession$sales)))
+
+((mae_trend_re - mae_base_re) / mae_base_re) * 100
+
+```
+
+The MAE for the base model is `r mae_base_re` while the MAE for the trends model `r mae_trend_re`. There is a 21.80% improvement for the trends model compared to the base model. 
 
 
-## Expansion 1: Is this technique useful today?
+## Expansion: Is this technique useful today?
 
 Let's use that same census data that includes May 2020 from earlier. And load in Google Trends data from 2004-2020
 
@@ -336,7 +352,6 @@ glance(trends_model)
 ```
 
 
-
 ### Plot in-sample forecasting
 
 ```{r}
@@ -376,7 +391,7 @@ predictions <-  motor_vehicles[18,] %>% add_predictions(base_line_out, "base_pre
 mae_base <- c(mae(base_line_out, predictions))
 mae_trend <- c(mae(trend_line_out, predictions))
 
-rows <- 18:90
+rows <- 18:196
 for (row in rows) {
   
   base_line_out <- 
@@ -407,6 +422,46 @@ predictions %>%
 
 ```
 
+### Calculating the error
+```{r}
+maebase <-
+  mean(abs(predictions$base_pred - log(predictions$sales)))
 
+maetrends <-
+  mean(abs(predictions$trend_pred - log(predictions$sales)))
+
+((maetrends - maebase)/maebase)*100
+
+```
+
+The MAE for the base model is `r maebase` while the MAE for the trends model `r maetrends`. There is a 9.63% greater error for the trends model compared to the base model. 
+
+```{r}
+# Calculate the MAE during recession (December 2007 through June 2009)
+
+recession <- predictions %>% filter(period > '2007-11-01' & period <= '2009-06-01')
+
+mae_base_re <- mean(abs(recession$base_pred - log(recession$sales)))
+
+mae_trend_re <- mean(abs(recession$trend_pred - log(recession$sales)))
+
+((mae_trend_re - mae_base_re) / mae_base_re) * 100
+
+```
+
+The MAE for the base model is `r mae_base_re` while the MAE for the trends model `r mae_trend_re`. For the 2008 recession, there is a 23.92% improvement in the predictions. This is consistant with the paper's findings that in some time periods - perhaps times of strife, trends data makes for a more accurate model. Let's see if that still holds up in our current time of turmoil. 
+
+```{r}
+covid19 <- predictions %>% filter(period >= '2020-03-01')
+
+mae_base_re <- mean(abs(covid19$base_pred - log(covid19$sales)))
+
+mae_trend_re <- mean(abs(covid19$trend_pred - log(covid19$sales)))
+
+((mae_trend_re - mae_base_re) / mae_base_re) * 100
+
+```
+
+The MAE for the base model is `r mae_base_re` while the MAE for the trends model `r mae_trend_re`. For the period between March of 2020 to the present (June 2020), there is a 7.03% improvement in the predictions. So the trends model is slightly more accurate than the base model, however both fail to "nowcast" the sharp dip in sales, presumably caused by the Covid-19 pandemic. 
 
 
