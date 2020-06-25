@@ -9,14 +9,14 @@ output:
     df_print: paged
   pdf_document: 
     toc: yes
-    toc_depth: 3
+    toc_depth: '3'
 ---
 
 # Setup
 
 Load some packages to help us model our data
 
-```{r setup}
+```{r setup, message=FALSE}
 library(tidyverse)
 library(scales)
 library(modelr)
@@ -25,7 +25,6 @@ library(broom)
 
 # set plot theme
 theme_set(theme_bw())
-
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
@@ -35,7 +34,7 @@ Load and preview the author's unadjusted data
 
 Author's Data: http://jakehofman.com/tmp/Autos.zip
 
-```{r load-authors_data}
+```{r load-authors_data, message=FALSE}
 
 # Load the merged.csv file that contains the unadjusted data that the author used in the article
 motor_vehicles <- read_csv("merged.csv")
@@ -51,7 +50,7 @@ head(motor_vehicles)
 
 Baseline AR-1 model
 
-```{r baseline-model_author_insample}
+```{r baseline-model_author_insample, message=FALSE}
 
 # Compute the baseline model using the author's unadjusted data 
 base_line <- lm(log(sales) ~ log(lag_month_sales)+ log(lag_year_sales), data=motor_vehicles)
@@ -64,7 +63,7 @@ glance(base_line)
 
 Trendline AR-1 model (added the trends data to the model as additional features)
 
-```{r trendline-model_author_insample}
+```{r trendline-model_author_insample, message=FALSE}
 
 # Compute the trendline model using the author's unadjusted data 
 trend_line <- lm(log(sales) ~ log(lag_month_sales) + log(lag_year_sales) + suvs + insurance, data=motor_vehicles)
@@ -77,7 +76,7 @@ glance(trend_line)
 
 Graph showing the performance of the baseline and trendline model compared to the actual results
 
-```{r graph_author_insample}
+```{r graph_author_insample, message=FALSE}
 
 # Add the predictions based off the baseline and trendline data on the author's unadjusted data
 motor_vehicles <- motor_vehicles %>% add_predictions(base_line, "base_line") %>% add_predictions(trend_line, "trend_line") %>% mutate(log_sales = log(sales))
@@ -102,7 +101,7 @@ motor_vehicles %>%
 
 Using a rolling window forecast method to estimate the data for periods 17 through 90 and then forcasting using the the lag month and lag year. The period begins from 17 so that there is at least a year long of data to create the model.
 
-```{r out_sample_author}
+```{r out_sample_author, message=FALSE}
 
 # Compute the baseline model using the author's unadjusted data 
 base_line_out <- lm(log(sales) ~ log(lag_month_sales) + log(lag_year_sales), data=motor_vehicles[1:17,])
@@ -144,7 +143,20 @@ predictions %>%
 
 The Mean Absolute Error of the baseline and trendline model on the author's unadjusted data 
 
-```{r out_sample_author_perf}
+```{r out_sample_author_perf, message=FALSE}
+
+# Graph of performance of baseline and trendline model
+predictions %>%
+  ggplot() +
+  geom_line(aes(x = Period, y = abs(base_pred - log_sales), color = "base")) +
+  geom_line(aes(x = Period, y = abs(trend_pred - log_sales), color = "trends")) +
+  scale_colour_manual("",
+                      breaks = c("base", "trends"),
+                      values = c("red", "black")) +
+  ggtitle("Motor Vehicles and Parts") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Index") + ylab("Absolute Error")
+
 
 # Calculate the MAE during 2005-06-01 to 2011-07-01
 mae_base <- mean(abs(predictions$base_pred - predictions$log_sales))
@@ -184,7 +196,7 @@ Trucks&SUVs: https://trends.google.com/trends/explore?cat=610&date=2004-01-01%20
 Auto Insurance: https://trends.google.com/trends/explore?cat=467&date=2004-01-01%202011-07-01&geo=US
 
 
-```{r load-raw_data}
+```{r load-raw_data, message=FALSE}
 
 # Load the unadjusted census data
 motor_vehicles_raw <- read_csv('auto_census.csv')
@@ -222,7 +234,7 @@ head(motor_vehicles_raw)
 
 Baseline AR-1 model
 
-```{r baseline-model_raw_insample}
+```{r baseline-model_raw_insample, message=FALSE}
 
 # Compute the baseline model using the raw unadjusted data  
 base_line <- lm(log(sales) ~ log(lag_month_sales)+ log(lag_year_sales), data=motor_vehicles_raw)
@@ -235,7 +247,7 @@ glance(base_line)
 
 Trendline AR-1 model (added the trends data to the model as additional features)
 
-```{r trendline-model_raw_insample}
+```{r trendline-model_raw_insample, message=FALSE}
 
 # Compute the trendline model using the raw unadjusted data 
 trend_line <- lm(log(sales) ~ log(lag_month_sales) + log(lag_year_sales) + suvs + insurance, data=motor_vehicles_raw)
@@ -248,7 +260,7 @@ glance(trend_line)
 
 Graph showing the performance of the baseline and trendline model compared to the actual results
 
-```{r graph_raw_insample}
+```{r graph_raw_insample, message=FALSE}
 
 # Add the predictions based off the baseline and trendline data on the raw unadjusted data
 motor_vehicles_raw <- motor_vehicles_raw %>% add_predictions(base_line, "base_line") %>% add_predictions(trend_line, "trend_line") %>% mutate(log_sales = log(sales))
@@ -273,7 +285,7 @@ motor_vehicles_raw %>%
 
 Using a rolling window forecast method to estimate the data for periods 17 through 90 and then forcasting using the the lag month and lag year. The period begins from 17 so that there is at least a year long of data to create the model.
 
-```{r out_sample_raw}
+```{r out_sample_raw, message=FALSE}
 
 # Compute the baseline model using the raw unadjusted data 
 base_line_out <- lm(log(sales) ~ log(lag_month_sales) + log(lag_year_sales), data=motor_vehicles_raw[1:17,])
@@ -315,7 +327,19 @@ predictions %>%
 
 The Mean Absolute Error of the baseline and trendline model on the raw unadjusted data 
 
-```{r out_sample_raw_perf}
+```{r out_sample_raw_perf, message=FALSE}
+
+# Graph of performance of baseline and trendline model
+predictions %>%
+  ggplot() +
+  geom_line(aes(x = Period, y = abs(base_pred - log_sales), color = "base")) +
+  geom_line(aes(x = Period, y = abs(trend_pred - log_sales), color = "trends")) +
+  scale_colour_manual("",
+                      breaks = c("base", "trends"),
+                      values = c("red", "black")) +
+  ggtitle("Motor Vehicles and Parts") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Index") + ylab("Absolute Error")
 
 # Calculate the MAE during 2005-06-01 to 2011-07-01
 mae_base <- mean(abs(predictions$base_pred - predictions$log_sales))
@@ -355,7 +379,7 @@ Trucks&SUVs: https://trends.google.com/trends/explore?cat=610&date=all&geo=US
 Auto Insurance: https://trends.google.com/trends/explore?cat=467&date=all&geo=US
 
 
-```{r load-raw_ext_data}
+```{r load-raw_ext_data, message=FALSE}
 
 # Load the unadjusted census data
 motor_vehicles_ext <- read_csv('auto_census.csv')
@@ -393,7 +417,7 @@ head(motor_vehicles_ext)
 
 Baseline AR-1 model
 
-```{r baseline-model_raw_ext_insample}
+```{r baseline-model_raw_ext_insample, message=FALSE}
 
 # Compute the baseline model using the raw unadjusted extension data  
 base_line <- lm(log(sales) ~ log(lag_month_sales)+ log(lag_year_sales), data=motor_vehicles_ext)
@@ -406,7 +430,7 @@ glance(base_line)
 
 Trendline AR-1 model (added the trends data to the model as additional features)
 
-```{r trendline-model_raw_ext_insample}
+```{r trendline-model_raw_ext_insample, message=FALSE}
 
 # Compute the trendline model using the raw unadjusted extension data 
 trend_line <- lm(log(sales) ~ log(lag_month_sales) + log(lag_year_sales) + suvs + insurance, data=motor_vehicles_ext)
@@ -418,7 +442,7 @@ glance(trend_line)
 
 Graph showing the performance of the baseline and trendline model compared to the actual results
 
-```{r graph_raw_ext_insample}
+```{r graph_raw_ext_insample, message=FALSE}
 
 # Add the predictions based off the baseline and trendline data on the raw unadjusted extension data
 motor_vehicles_ext <- motor_vehicles_ext %>% add_predictions(base_line, "base_line") %>% add_predictions(trend_line, "trend_line") %>% mutate(log_sales = log(sales))
@@ -443,7 +467,7 @@ motor_vehicles_ext %>%
 
 Using a rolling window forecast method to estimate the data for periods 17 through 90 and then forcasting using the the lag month and lag year. The period begins from 17 so that there is at least a year long of data to create the model.
 
-```{r out_sample_raw_ext}
+```{r out_sample_raw_ext, message=FALSE}
 
 # Compute the baseline model using the raw unadjusted extension data 
 base_line_out <- lm(log(sales) ~ log(lag_month_sales) + log(lag_year_sales), data=motor_vehicles_ext[1:17,])
@@ -485,9 +509,21 @@ predictions %>%
 
 The Mean Absolute Error of the baseline and trendline model on the raw unadjusted extension data 
 
-```{r out_sample_raw_ext_perf}
+```{r out_sample_raw_ext_perf, message=FALSE}
 
-# Calculate the MAE during 2005-06-01 to 2011-07-01
+# Graph of performance of baseline and trendline model
+predictions %>%
+  ggplot() +
+  geom_line(aes(x = Period, y = abs(base_pred - log_sales), color = "base")) +
+  geom_line(aes(x = Period, y = abs(trend_pred - log_sales), color = "trends")) +
+  scale_colour_manual("",
+                      breaks = c("base", "trends"),
+                      values = c("red", "black")) +
+  ggtitle("Motor Vehicles and Parts") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Index") + ylab("Absolute Error")
+
+# Calculate the MAE during 2005-06-01 to Present
 mae_base <- mean(abs(predictions$base_pred - predictions$log_sales))
 print(mae_base)
 
