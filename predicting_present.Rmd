@@ -1,5 +1,5 @@
 ---
-title: "Predicting the future"
+title: "Predicting the Present"
 author: "Gabrielle Martinez (Pace University)"
 date: "6/23/2020"
 output: html_document
@@ -10,6 +10,7 @@ library(scales)
 library(broom)
 library(modelr)
 library(tidyverse)
+library(here)
 
 theme_set(theme_bw())
 
@@ -79,7 +80,7 @@ contemporaneous values of the Trends variables as predictors. Since the series i
 released 2 weeks after the end of each month, this gives us a meaningful forecasting lead.
 The value of k is chosen so that there are a reasonable number of observations for the
 first regression in the sequence. In this case we chose k = 17, which implied the forecasts
-start in 2005-06-01." (Choi & Varian, 2011)
+start in 2005-06-01." [(Choi & Varian, 2011)](http://people.ischool.berkeley.edu/~hal/Papers/2011/ptp.pdf)
 
 Let's start with the base model
 ```{r rollingwindow}
@@ -278,7 +279,7 @@ maetrends <-
 
 ```
 
-The MAE for the base model is `r maebase` while the MAE for the trends model `r maetrends`. There is a 7.21% greater error for the trends model compared to the base model. 
+The MAE for the base model is `r maebase` while the MAE for the trends model `r maetrends`. There is a 7.21% greater error for the trends model compared to the base model. The paper describes how the trends model can be less accurate in the agrregate but more accurate at certain "turning points". They use the 2008 recession as an example, perhaps suggesting that trends data would be more accurate than a simple model during extreme or unusal cases. 
 
 ```{r}
 # Calculate the MAE during recession (December 2007 through June 2009)
@@ -293,7 +294,7 @@ mae_trend_re <- mean(abs(recession$trend_pred - log(recession$sales)))
 
 ```
 
-The MAE for the base model is `r mae_base_re` while the MAE for the trends model `r mae_trend_re`. There is a 21.80% improvement for the trends model compared to the base model. 
+The MAE for the base model is `r mae_base_re` while the MAE for the trends model `r mae_trend_re`. There is a 21.80% improvement for the trends model compared to the base model. This is still fairly constant with the findings of the paper, which found a 20% improvement in accuracy.
 
 
 ## Expansion: Is this technique useful today?
@@ -388,8 +389,8 @@ predictions <-  motor_vehicles[18,] %>% add_predictions(base_line_out, "base_pre
 
 #for loop for the rolling window
 
-mae_base <- c(mae(base_line_out, predictions))
-mae_trend <- c(mae(trend_line_out, predictions))
+mae_base <- c(log(predictions$base_pred) - log(predictions$sales))
+mae_trend <- c(log(predictions$trend_pred) - log(predictions$sales))
 
 rows <- 18:196
 for (row in rows) {
@@ -403,8 +404,8 @@ for (row in rows) {
   predictions <- 
     add_row(predictions, add_predictions(motor_vehicles[row+1, ], base_line_out, "base_pred") %>% add_predictions(trend_line_out, "trend_pred"))
   
-  mae_base <- c(mae_base, mae(base_line_out, predictions))
-  mae_trend <- c(mae_trend, mae(trend_line_out, predictions))
+  mae_base <- c(log(predictions$base_pred) - log(predictions$sales))
+  mae_trend <- c(log(predictions$trend_pred) - log(predictions$sales))
   
 }
 
@@ -423,6 +424,20 @@ predictions %>%
 ```
 
 ### Calculating the error
+
+```{r}
+
+data.frame(predictions, mae_base, mae_trend) %>%
+  ggplot(aes(x=period, y=mae_base)) +
+  geom_line(aes(color="base"), color = "black") +
+  geom_line(aes(x=period, y=mae_trend, color="trend"), linetype = "dashed") +
+  ylab("error")
+
+
+```
+
+We see that the error of the two models are very close to each other and both have trouble predicting the recent dip in the sales due to Covid-19 and subsisiquent lockdown. 
+
 ```{r}
 maebase <-
   mean(abs(predictions$base_pred - log(predictions$sales)))
