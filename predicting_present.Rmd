@@ -389,8 +389,8 @@ predictions <-  motor_vehicles[18,] %>% add_predictions(base_line_out, "base_pre
 
 #for loop for the rolling window
 
-mae_base <- c(log(predictions$base_pred) - log(predictions$sales))
-mae_trend <- c(log(predictions$trend_pred) - log(predictions$sales))
+#mae_base <- c(log(predictions$base_pred) - log(predictions$sales))
+#mae_trend <- c(log(predictions$trend_pred) - log(predictions$sales))
 
 rows <- 18:196
 for (row in rows) {
@@ -404,8 +404,8 @@ for (row in rows) {
   predictions <- 
     add_row(predictions, add_predictions(motor_vehicles[row+1, ], base_line_out, "base_pred") %>% add_predictions(trend_line_out, "trend_pred"))
   
-  mae_base <- c(log(predictions$base_pred) - log(predictions$sales))
-  mae_trend <- c(log(predictions$trend_pred) - log(predictions$sales))
+  #mae_base <- c(log(predictions$base_pred) - log(predictions$sales))
+  #mae_trend <- c(log(predictions$trend_pred) - log(predictions$sales))
   
 }
 
@@ -427,7 +427,11 @@ predictions %>%
 
 ```{r}
 
-data.frame(predictions, mae_base, mae_trend) %>%
+#data.frame(predictions, mae_base, mae_trend) 
+
+predictions %>%
+  mutate(mae_base = abs(predictions$base_pred - log(predictions$sales))) %>%
+  mutate(mae_trend = abs(predictions$trend_pred - log(predictions$sales))) %>%
   ggplot(aes(x=period, y=mae_base)) +
   geom_line(aes(color="base"), color = "black") +
   geom_line(aes(x=period, y=mae_trend, color="trend"), linetype = "dashed") +
