@@ -364,7 +364,7 @@ motor_vehicles_in_sample %>%
   ggplot(aes(x=period, y = log(sales))) +
   geom_line() + 
   geom_line(aes(y=base), color = "red", linetype="dashed") +
-  geom_line(aes(y=trend), alpha = .5) +
+  geom_line(aes(y=trend), color="grey") +
   xlab("Index") +
   ylab("log(mvp)")
 
