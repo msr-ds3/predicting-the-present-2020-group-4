@@ -8,4 +8,4 @@ You will see two versions of this project as we had some technical difficulties 
 
 For our expansion, we tested the paper's model into our present. We wanted to know how well it would do in a time of high uncertainty like the current pandemic, as the paper suggest that in times of strife, a model using trends data is more accurate. 
 
-The finished replication and expansion for *Part 1: Motor vehicles and parts* can be found [here] and [here] while the unfinished replication for *Part 2: Unemployment* can be found [here] and [here].
+The finished replication and expansion for *Part 1: Motor vehicles and parts* can be found [here]() and [here]() while the unfinished replication for *Part 2: Unemployment* can be found [here]() and [here]().
