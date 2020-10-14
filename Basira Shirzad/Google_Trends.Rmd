@@ -1,0 +1,562 @@
+---
+title: "Google Trends Prediction Performance"
+author: "Basira Shirzad"
+date: "'`r Sys.time()`"
+output: 
+  html_document:
+    toc: yes
+    toc_depth: '3'
+    df_print: paged
+  pdf_document: 
+    toc: yes
+    toc_depth: '3'
+---
+
+# Setup
+
+Load some packages to help us model our data
+
+```{r setup, message=FALSE}
+library(tidyverse)
+library(scales)
+library(modelr)
+library(lubridate)
+library(broom)
+
+# set plot theme
+theme_set(theme_bw())
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Author's Unadjusted Data
+
+Load and preview the author's unadjusted data
+
+Author's Data: http://jakehofman.com/tmp/Autos.zip
+
+```{r load-authors_data, message=FALSE}
+
+# Load the merged.csv file that contains the unadjusted data that the author used in the article
+motor_vehicles <- read_csv("merged.csv")
+
+# Add in the columns that compute the lag by month and year 
+motor_vehicles <- motor_vehicles %>% mutate(lag_month_sales = lag(sales, 1), lag_year_sales = lag(sales, 12))
+
+# Preview of the author's unadjusted data
+head(motor_vehicles)
+```
+
+> In-sample fit on the author's unadjusted data 
+
+Baseline AR-1 model
+
+```{r baseline-model_author_insample, message=FALSE}
+
+# Compute the baseline model using the author's unadjusted data 
+base_line <- lm(log(sales) ~ log(lag_month_sales)+ log(lag_year_sales), data=motor_vehicles)
+
+# Preview of baseline model results
+tidy(base_line)
+glance(base_line)
+
+```
+
+Trendline AR-1 model (added the trends data to the model as additional features)
+
+```{r trendline-model_author_insample, message=FALSE}
+
+# Compute the trendline model using the author's unadjusted data 
+trend_line <- lm(log(sales) ~ log(lag_month_sales) + log(lag_year_sales) + suvs + insurance, data=motor_vehicles)
+
+# Preview of trendline model results
+tidy(trend_line)
+glance(trend_line)
+
+```
+
+Graph showing the performance of the baseline and trendline model compared to the actual results
+
+```{r graph_author_insample, message=FALSE}
+
+# Add the predictions based off the baseline and trendline data on the author's unadjusted data
+motor_vehicles <- motor_vehicles %>% add_predictions(base_line, "base_line") %>% add_predictions(trend_line, "trend_line") %>% mutate(log_sales = log(sales))
+
+# Plot the graph of the predictions made using in-sample
+motor_vehicles %>%
+  filter(Period >= '2005-06-01') %>%
+  ggplot() +
+  geom_line(aes(x = Period, y = log_sales, color = "actual")) +
+  geom_line(aes(x = Period, y = base_line, color = "base"), linetype = "dashed") +
+  geom_line(aes(x = Period, y = trend_line, color = "trends")) +
+  scale_colour_manual("",
+                      breaks = c("actual", "base", "trends"),
+                      values = c("black", "red", "grey")) +
+  ggtitle("Motor Vehicles and Parts") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  xlab("Index") + ylab("log(mvp)")
+
+```
+
+> Out of Sample Forecasting on the author's unadjusted data 
+
+Using a rolling window forecast method to estimate the data for periods 17 through 90 and then forcasting using the the lag month and lag year. The period begins from 17 so that there is at least a year long of data to create the model.
+
+```{r out_sample_author, message=FALSE}
+
+# Compute the baseline model using the author's unadjusted data 
+base_line_out <- lm(log(sales) ~ log(lag_month_sales) + log(lag_year_sales), data=motor_vehicles[1:17,])
+
+# Compute the trendline model using the author's unadjusted data 
+trend_line_out <- lm(log(sales) ~ log(lag_month_sales) + log(lag_year_sales) + suvs + insurance, data=motor_vehicles[1:17,])
+
+# Add predictions of the first 17 rows into new dataframe called predictions
+predictions <-  motor_vehicles[18,] %>% add_predictions(base_line_out, "base_pred") %>% add_predictions(trend_line_out, "trend_pred")
+
+# Create a new model for each of the remaining rows
+rows <- 18:90
+
+for (row in rows) {
+  
+  base_line_out <- lm(log(sales) ~ log(lag_month_sales) + log(lag_year_sales), data=motor_vehicles[1:row,])
+
+trend_line_out <- lm(log(sales) ~ log(lag_month_sales) + log(lag_year_sales) + suvs + insurance, data=motor_vehicles[1:row,])
+  
+  predictions <- add_row(predictions, add_predictions(motor_vehicles[row+1, ], base_line_out, "base_pred") %>% add_predictions(trend_line_out, "trend_pred"))
+}
+
+# Plot the graph of the predictions made using out-sample
+predictions %>%
+  ggplot() +
+  geom_line(aes(x = Period, y = log_sales, color = "actual")) +
+  geom_line(aes(x = Period, y = base_pred, color = "base"), linetype = "dashed") +
+  geom_line(aes(x = Period, y = trend_pred, color = "trends")) +
+  scale_colour_manual("",
+                      breaks = c("actual", "base", "trends"),
+                      values = c("black", "red", "grey")) +
+  ggtitle("Motor Vehicles and Parts") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Index") + ylab("log(mvp)")
+
+```
+
+> Performance Comparison on the baseline and trendline model
+
+The Mean Absolute Error of the baseline and trendline model on the author's unadjusted data 
+
+```{r out_sample_author_perf, message=FALSE}
+
+# Graph of performance of baseline and trendline model
+predictions %>%
+  ggplot() +
+  geom_line(aes(x = Period, y = abs(base_pred - log_sales), color = "base")) +
+  geom_line(aes(x = Period, y = abs(trend_pred - log_sales), color = "trends")) +
+  scale_colour_manual("",
+                      breaks = c("base", "trends"),
+                      values = c("red", "black")) +
+  ggtitle("Motor Vehicles and Parts") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Index") + ylab("Absolute Error")
+
+
+# Calculate the MAE during 2005-06-01 to 2011-07-01
+mae_base <- mean(abs(predictions$base_pred - predictions$log_sales))
+print(mae_base)
+
+mae_trend <- mean(abs(predictions$trend_pred - predictions$log_sales))
+print(mae_trend)
+
+improvement <- ((mae_trend - mae_base) / mae_base) * 100
+print(improvement)
+
+# Calculate the MAE during recession (December 2007 through June 2009)
+
+recession <- predictions %>% filter(Period > '2007-11-01' & Period <= '2009-06-01')
+
+mae_base_re <- mean(abs(recession$base_pred - recession$log_sales))
+print(mae_base_re)
+
+mae_trend_re <- mean(abs(recession$trend_pred - recession$log_sales))
+print(mae_trend_re)
+
+improvement_re <- ((mae_trend_re - mae_base_re) / mae_base_re) * 100
+print(improvement_re)
+
+```
+
+# Raw Unadjusted Data
+
+Load and preview the raw unadjusted data from the census and Google trends
+
+Census Data Link: https://www.census.gov/econ/currentdata/dbsearch?program=MARTS&startYear=2004&endYear=2020&categories%5B%5D=441&dataType=SM&geoLevel=US&notAdjusted=1&submit=GET+DATA&releaseScheduleId=
+
+Google Trends:
+
+Trucks&SUVs: https://trends.google.com/trends/explore?cat=610&date=2004-01-01%202011-07-01&geo=US
+
+Auto Insurance: https://trends.google.com/trends/explore?cat=467&date=2004-01-01%202011-07-01&geo=US
+
+
+```{r load-raw_data, message=FALSE}
+
+# Load the unadjusted census data
+motor_vehicles_raw <- read_csv('auto_census.csv')
+
+# Modify the data frame so that the Period column is in proper date form 
+motor_vehicles_raw <- motor_vehicles_raw %>% mutate(date = paste(Period, "-01", sep="")) %>% mutate(new_date = as.Date(date, format="%b-%y-%d")) %>% select(Period = new_date, sales = Value)
+
+# Load the Google's trend data on Trucks & SUVs
+truck_suv_short <- read_csv('Truck_Suv_short.csv')
+
+# Modify the data frame so that the Period column is in proper date form 
+truck_suv_short <- truck_suv_short %>% mutate(date = paste(Period, "-01", sep="")) %>% mutate(new_date = as.Date(date, format="%Y-%m-%d")) %>% select(Period = new_date, suvs)
+
+# Load the Google's trend data on Auto Insurance 
+auto_insurance_short <- read_csv('Auto_Insurance_short.csv')
+
+# Modify the data frame so that the Period column is in proper date form 
+auto_insurance_short <- auto_insurance_short %>% mutate(date = paste(Period, "-01", sep="")) %>% mutate(new_date = as.Date(date, format="%Y-%m-%d")) %>% select(Period = new_date, insurance)
+
+# Create a temp to hold the inner join of the census and Truck & SUVs data
+temp <- inner_join(motor_vehicles_raw, truck_suv_short, by = c("Period" = "Period"))
+
+# Join the temp to the Auto Insurance data
+motor_vehicles_raw <- inner_join(temp, auto_insurance_short, by = c("Period" = "Period"))
+
+# Add in the columns that compute the lag by month and year 
+motor_vehicles_raw <- motor_vehicles_raw %>% mutate(lag_month_sales = lag(sales, 1), lag_year_sales = lag(sales, 12))
+
+# Preview of the raw unadjusted data
+head(motor_vehicles_raw)
+
+```
+
+> In-sample fit on the raw unadjusted data 
+
+Baseline AR-1 model
+
+```{r baseline-model_raw_insample, message=FALSE}
+
+# Compute the baseline model using the raw unadjusted data  
+base_line <- lm(log(sales) ~ log(lag_month_sales)+ log(lag_year_sales), data=motor_vehicles_raw)
+
+# Preview of baseline model results
+tidy(base_line)
+glance(base_line)
+
+```
+
+Trendline AR-1 model (added the trends data to the model as additional features)
+
+```{r trendline-model_raw_insample, message=FALSE}
+
+# Compute the trendline model using the raw unadjusted data 
+trend_line <- lm(log(sales) ~ log(lag_month_sales) + log(lag_year_sales) + suvs + insurance, data=motor_vehicles_raw)
+
+# Preview of trendline model results
+tidy(trend_line)
+glance(trend_line)
+
+```
+
+Graph showing the performance of the baseline and trendline model compared to the actual results
+
+```{r graph_raw_insample, message=FALSE}
+
+# Add the predictions based off the baseline and trendline data on the raw unadjusted data
+motor_vehicles_raw <- motor_vehicles_raw %>% add_predictions(base_line, "base_line") %>% add_predictions(trend_line, "trend_line") %>% mutate(log_sales = log(sales))
+
+# Plot the graph of the predictions made using in-sample
+motor_vehicles_raw %>%
+  filter(Period >= '2005-06-01') %>%
+  ggplot() +
+  geom_line(aes(x = Period, y = log_sales, color = "actual")) +
+  geom_line(aes(x = Period, y = base_line, colour = "base"), linetype = "dashed") +
+  geom_line(aes(x = Period, y = trend_line, color = "trends")) +
+  scale_colour_manual("",
+                      breaks = c("actual", "base", "trends"),
+                      values = c("black", "red", "grey")) +
+  ggtitle("Motor Vehicles and Parts") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  xlab("Index") + ylab("log(mvp)")
+
+```
+
+> Out of Sample Forecasting on the raw unadjusted data 
+
+Using a rolling window forecast method to estimate the data for periods 17 through 90 and then forcasting using the the lag month and lag year. The period begins from 17 so that there is at least a year long of data to create the model.
+
+```{r out_sample_raw, message=FALSE}
+
+# Compute the baseline model using the raw unadjusted data 
+base_line_out <- lm(log(sales) ~ log(lag_month_sales) + log(lag_year_sales), data=motor_vehicles_raw[1:17,])
+
+# Compute the trendline model using the raw unadjusted data 
+trend_line_out <- lm(log(sales) ~ log(lag_month_sales) + log(lag_year_sales) + suvs + insurance, data=motor_vehicles_raw[1:17,])
+
+# Add predictions of the first 17 rows into new dataframe called predictions
+predictions <-  motor_vehicles_raw[18,] %>% add_predictions(base_line_out, "base_pred") %>% add_predictions(trend_line_out, "trend_pred")
+
+# Create a new model for each of the remaining rows
+rows <- 18:90
+
+for (row in rows) {
+  
+  base_line_out <- lm(log(sales) ~ log(lag_month_sales) + log(lag_year_sales), data=motor_vehicles_raw[1:row,])
+  
+  trend_line_out <- lm(log(sales) ~ log(lag_month_sales) + log(lag_year_sales) + suvs + insurance, data=motor_vehicles_raw[1:row,])
+  
+  predictions <- add_row(predictions, add_predictions(motor_vehicles_raw[row+1, ], base_line_out, "base_pred") %>% add_predictions(trend_line_out, "trend_pred"))
+}
+
+# Plot the graph of the predictions made using out-sample
+predictions %>%
+  ggplot() +
+  geom_line(aes(x = Period, y = log(sales), color = "actual")) +
+  geom_line(aes(x = Period, y = base_pred, color = "base"), linetype = "dashed") +
+  geom_line(aes(x = Period, y = trend_pred, color = "trends")) +
+  scale_colour_manual("",
+                      breaks = c("actual", "base", "trends"),
+                      values = c("black", "red", "grey")) +
+  ggtitle("Motor Vehicles and Parts") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  xlab("Index") + ylab("log(mvp)")
+
+```
+
+> Performance Comparison of baseline and trendline model
+
+The Mean Absolute Error of the baseline and trendline model on the raw unadjusted data 
+
+```{r out_sample_raw_perf, message=FALSE}
+
+# Graph of performance of baseline and trendline model
+predictions %>%
+  ggplot() +
+  geom_line(aes(x = Period, y = abs(base_pred - log_sales), color = "base")) +
+  geom_line(aes(x = Period, y = abs(trend_pred - log_sales), color = "trends")) +
+  scale_colour_manual("",
+                      breaks = c("base", "trends"),
+                      values = c("red", "black")) +
+  ggtitle("Motor Vehicles and Parts") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Index") + ylab("Absolute Error")
+
+# Calculate the MAE during 2005-06-01 to 2011-07-01
+mae_base <- mean(abs(predictions$base_pred - predictions$log_sales))
+print(mae_base)
+
+mae_trend <- mean(abs(predictions$trend_pred - predictions$log_sales))
+print(mae_trend)
+
+improvement <- ((mae_trend - mae_base) / mae_base) * 100
+print(improvement)
+
+# Calculate the MAE during recession (December 2007 through June 2009)
+
+recession <- predictions %>% filter(Period > '2007-11-01' & Period <= '2009-06-01')
+
+mae_base_re <- mean(abs(recession$base_pred - recession$log_sales))
+print(mae_base_re)
+
+mae_trend_re <- mean(abs(recession$trend_pred - recession$log_sales))
+print(mae_trend_re)
+
+improvement_re <- ((mae_trend_re - mae_base_re) / mae_base_re) * 100
+print(improvement_re)
+
+```
+
+# Extension of Raw Unadjusted Data
+
+Load and preview the raw unadjusted data from the census and Google trends from the year: 2004 to 2020
+
+Census Data Link: https://www.census.gov/econ/currentdata/dbsearch?program=MARTS&startYear=2004&endYear=2020&categories%5B%5D=441&dataType=SM&geoLevel=US&notAdjusted=1&submit=GET+DATA&releaseScheduleId=
+
+Google Trends:
+
+Trucks&SUVs: https://trends.google.com/trends/explore?cat=610&date=all&geo=US
+
+Auto Insurance: https://trends.google.com/trends/explore?cat=467&date=all&geo=US
+
+
+```{r load-raw_ext_data, message=FALSE}
+
+# Load the unadjusted census data
+motor_vehicles_ext <- read_csv('auto_census.csv')
+
+# Modify the data frame so that the Period column is in proper date form 
+motor_vehicles_ext <- motor_vehicles_ext %>% mutate(date = paste(Period, "-01", sep="")) %>% mutate(new_date = as.Date(date, format="%b-%y-%d")) %>% select(Period = new_date, sales = Value)
+
+# Load the Google's trend data on Trucks & SUVs
+truck_suv_ext <- read_csv('Truck_Suv_ext.csv')
+
+# Modify the data frame so that the Period column is in proper date form 
+truck_suv_ext <- truck_suv_ext %>% mutate(date = paste(Period, "-01", sep="")) %>% mutate(new_date = as.Date(date, format="%Y-%m-%d")) %>% select(Period = new_date, suvs)
+
+# Load the Google's trend data on Auto Insurance 
+auto_insurance_ext <- read_csv('Auto_Insurance_ext.csv')
+
+# Modify the data frame so that the Period column is in proper date form 
+auto_insurance_ext <- auto_insurance_ext %>% mutate(date = paste(Period, "-01", sep="")) %>% mutate(new_date = as.Date(date, format="%Y-%m-%d")) %>% select(Period = new_date, insurance)
+
+# Create a temp to hold the inner join of the census and Truck & SUVs data
+temp <- inner_join(motor_vehicles_ext, truck_suv_ext, by = c("Period" = "Period"))
+
+# Join the temp to the Auto Insurance data
+motor_vehicles_ext <- inner_join(temp, auto_insurance_ext, by = c("Period" = "Period"))
+
+# Add in the columns that compute the lag by month and year 
+motor_vehicles_ext <- motor_vehicles_ext %>% mutate(lag_month_sales = lag(sales, 1), lag_year_sales = lag(sales, 12)) %>% filter(!is.na(sales))
+
+# Preview of the raw unadjusted extension data
+head(motor_vehicles_ext)
+
+```
+
+> In-sample fit on the raw unadjusted extension data 
+
+Baseline AR-1 model
+
+```{r baseline-model_raw_ext_insample, message=FALSE}
+
+# Compute the baseline model using the raw unadjusted extension data  
+base_line <- lm(log(sales) ~ log(lag_month_sales)+ log(lag_year_sales), data=motor_vehicles_ext)
+
+# Preview of baseline model results
+tidy(base_line)
+glance(base_line)
+
+```
+
+Trendline AR-1 model (added the trends data to the model as additional features)
+
+```{r trendline-model_raw_ext_insample, message=FALSE}
+
+# Compute the trendline model using the raw unadjusted extension data 
+trend_line <- lm(log(sales) ~ log(lag_month_sales) + log(lag_year_sales) + suvs + insurance, data=motor_vehicles_ext)
+
+# Preview of trendline model results
+tidy(trend_line)
+glance(trend_line)
+```
+
+Graph showing the performance of the baseline and trendline model compared to the actual results
+
+```{r graph_raw_ext_insample, message=FALSE}
+
+# Add the predictions based off the baseline and trendline data on the raw unadjusted extension data
+motor_vehicles_ext <- motor_vehicles_ext %>% add_predictions(base_line, "base_line") %>% add_predictions(trend_line, "trend_line") %>% mutate(log_sales = log(sales))
+
+# Plot the graph of the predictions made using in-sample
+motor_vehicles_ext %>%
+  filter(Period >= '2005-06-01') %>%
+  ggplot() +
+  geom_line(aes(x = Period, y = log_sales, color = "actual")) +
+  geom_line(aes(x = Period, y = base_line, colour = "base"), linetype = "dashed") +
+  geom_line(aes(x = Period, y = trend_line, color = "trends")) +
+  scale_colour_manual("",
+                      breaks = c("actual", "base", "trends"),
+                      values = c("black", "red", "grey")) +
+  ggtitle("Motor Vehicles and Parts") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  xlab("Index") + ylab("log(mvp)")
+
+```
+
+> Out of Sample Forecasting on the raw unadjusted extension data 
+
+Using a rolling window forecast method to estimate the data for periods 17 through 90 and then forcasting using the the lag month and lag year. The period begins from 17 so that there is at least a year long of data to create the model.
+
+```{r out_sample_raw_ext, message=FALSE}
+
+# Compute the baseline model using the raw unadjusted extension data 
+base_line_out <- lm(log(sales) ~ log(lag_month_sales) + log(lag_year_sales), data=motor_vehicles_ext[1:17,])
+
+# Compute the trendline model using the raw unadjusted extension data 
+trend_line_out <- lm(log(sales) ~ log(lag_month_sales) + log(lag_year_sales) + suvs + insurance, data=motor_vehicles_ext[1:17,])
+
+# Add predictions of the first 17 rows into new dataframe called predictions
+predictions <-  motor_vehicles_ext[18,] %>% add_predictions(base_line_out, "base_pred") %>% add_predictions(trend_line_out, "trend_pred")
+
+# Create a new model for each of the remaining rows
+rows <- 18:196
+
+for (row in rows) {
+  
+  base_line_out <- lm(log(sales) ~ log(lag_month_sales) + log(lag_year_sales), data=motor_vehicles_ext[1:row,])
+  
+  trend_line_out <- lm(log(sales) ~ log(lag_month_sales) + log(lag_year_sales) + suvs + insurance, data=motor_vehicles_ext[1:row,])
+  
+  predictions <- add_row(predictions, add_predictions(motor_vehicles_ext[row+1, ], base_line_out, "base_pred") %>% add_predictions(trend_line_out, "trend_pred"))
+}
+
+# Plot the graph of the predictions made using out-sample
+predictions %>%
+  ggplot() +
+  geom_line(aes(x = Period, y = log(sales), color = "actual")) +
+  geom_line(aes(x = Period, y = base_pred, color = "base"), linetype = "dashed") +
+  geom_line(aes(x = Period, y = trend_pred, color = "trends")) +
+  scale_colour_manual("",
+                      breaks = c("actual", "base", "trends"),
+                      values = c("black", "red", "grey")) +
+  ggtitle("Motor Vehicles and Parts") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  xlab("Index") + ylab("log(mvp)")
+
+```
+
+> Performance Comparison of baseline and trendline model
+
+The Mean Absolute Error of the baseline and trendline model on the raw unadjusted extension data 
+
+```{r out_sample_raw_ext_perf, message=FALSE}
+
+# Graph of performance of baseline and trendline model
+predictions %>%
+  ggplot() +
+  geom_line(aes(x = Period, y = abs(base_pred - log_sales), color = "base")) +
+  geom_line(aes(x = Period, y = abs(trend_pred - log_sales), color = "trends")) +
+  scale_colour_manual("",
+                      breaks = c("base", "trends"),
+                      values = c("red", "black")) +
+  ggtitle("Motor Vehicles and Parts") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Index") + ylab("Absolute Error")
+
+# Calculate the MAE during 2005-06-01 to Present
+mae_base <- mean(abs(predictions$base_pred - predictions$log_sales))
+print(mae_base)
+
+mae_trend <- mean(abs(predictions$trend_pred - predictions$log_sales))
+print(mae_trend)
+
+improvement <- ((mae_trend - mae_base) / mae_base) * 100
+print(improvement)
+
+# Calculate the MAE during recession (December 2007 through June 2009)
+
+recession <- predictions %>% filter(Period > '2007-11-01' & Period <= '2009-06-01')
+
+mae_base_re <- mean(abs(recession$base_pred - recession$log_sales))
+print(mae_base_re)
+
+mae_trend_re <- mean(abs(recession$trend_pred - recession$log_sales))
+print(mae_trend_re)
+
+improvement_re <- ((mae_trend_re - mae_base_re) / mae_base_re) * 100
+print(improvement_re)
+
+# Calculate the MAE during covid-19 outbreak (December 2007 through June 2009)
+
+covid_outbreak <- predictions %>% filter(Period >= '2020-03-01' & Period <= '2020-06-01')
+
+mae_base_cv <- mean(abs(covid_outbreak$base_pred - covid_outbreak$log_sales))
+print(mae_base_cv)
+
+mae_trend_cv <- mean(abs(covid_outbreak$trend_pred - covid_outbreak$log_sales))
+print(mae_trend_cv)
+
+improvement_cv <- ((mae_trend_cv - mae_base_cv) / mae_base_cv) * 100
+print(improvement_cv)
+
+```

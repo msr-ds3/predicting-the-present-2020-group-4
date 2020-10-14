@@ -1,0 +1,130 @@
+---
+title: "Initial Claims for Unemployment Benefits"
+author: "Basira Shirzad"
+date: "'`r Sys.time()`"
+output: 
+  html_document:
+    toc: yes
+    toc_depth: '3'
+    df_print: paged
+  pdf_document: 
+    toc: yes
+    toc_depth: '3'
+---
+
+# Setup
+
+Load some packages to help us model our data
+
+```{r setup, message=FALSE}
+library(tidyverse)
+library(scales)
+library(modelr)
+library(lubridate)
+library(broom)
+
+# set plot theme
+theme_set(theme_bw())
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Unemployment Initial Claims Data: 1/17/2004 to 7/2/2011
+
+Load and preview the United States Department of Labor unemployment data 
+
+Unemployment Data: https://oui.doleta.gov/unemploy/claims.asp
+
+Google Trend: 
+
+Job: https://trends.google.com/trends/explore?cat=60&date=2004-01-01%202011-07-02&geo=US
+
+Welfare & Unemployment: https://trends.google.com/trends/explore?cat=706&date=2004-01-01%202011-07-02&geo=US
+
+
+```{r load-unemp_data, message=FALSE}
+
+# Load the unemployment_initial.csv file that contains the unemployment initial claims data
+unemployment_initial <- read_csv("unemployment_initial.csv")
+
+# Modify the Period column to the proper date form, add a lag column of the date, filter to specific time frame focus
+unemployment_initial <- unemployment_initial %>% 
+  mutate(date = as.Date(Period, format = "%m/%d/%Y")) %>%
+  mutate(lag_week = lag(sa, 1), log_sa = log(sa)) %>%
+  select(Period = date, nsa, sf, sa, sa_4week, lag_week, log_sa) %>%
+  filter(Period >= ' 2004-01-17' & Period <= '2011-07-02')
+
+# Modify the Period column so that it can be used to join the Google Trends data
+unemployment_initial <- unemployment_initial %>% 
+  mutate(check = format(Period, "%Y-%m"))
+                                       
+# Load the Google's trend data on Job
+job_short <- read_csv('job_short.csv')
+
+# Convert Google Trend data on Job to seasonally adjusted
+ts_job <- ts(job_short$job, start=c(2004, 1), end=c(2011, 7), frequency=12)
+
+stl_job <- stl(ts_job, s.window = "periodic")
+
+ts_job <- stl_job[["time.series"]] 
+
+sa_job <- ts_job[, "trend"]
+
+sa_job <- broom::tidy(sa_job)
+
+sa_job <- sa_job %>% mutate(date = date_decimal(index)) %>% mutate(new_date = ceiling_date(date, "day")) %>% mutate(Period = format(new_date, "%Y-%m"))
+
+job_short <- inner_join(job_short, sa_job, by = c("Period" = "Period")) %>% select(Period, job, sa_job = value)
+
+# Load the Google's trend data on Welfare & Unemployment
+welfare_short <- read_csv('welfare_short.csv')
+
+# Convert Google Trend data on Welfare & Unemployment to seasonally adjusted
+ts_welfare <- ts(welfare_short$welfare, start=c(2004, 1), end=c(2011, 7), frequency=12)
+
+stl_welfare <- stl(ts_welfare, s.window = "periodic")
+
+ts_welfare <- stl_welfare[["time.series"]] 
+
+sa_welfare <- ts_welfare[, "trend"]
+
+sa_welfare <- broom::tidy(sa_welfare)
+
+sa_welfare <- sa_welfare %>% mutate(date = date_decimal(index)) %>% mutate(new_date = ceiling_date(date, "day")) %>% mutate(Period = format(new_date, "%Y-%m"))
+
+welfare_short <- inner_join(welfare_short, sa_welfare, by = c("Period" = "Period")) %>% select(Period, welfare, sa_welfare = value)
+
+# Create a temp to hold the left join of the unemployment and Job data
+temp <- left_join(unemployment_initial, job_short, by = c("check" = "Period"))
+
+# Join the temp to the Welfare & Unemployment data
+unemployment_initial <- left_join(temp, welfare_short, by = c("check" = "Period")) %>% select(Period, nsa, sf, sa, sa_4week, job, sa_job, welfare, sa_welfare, lag_week, log_sa)
+
+# Preview of the unemployment initial claims data
+head(unemployment_initial)
+```
+
+Baseline regression: AR-1 model on the log of initial claims
+
+```{r baseline-model_unemp, message=FALSE}
+
+# Compute the baseline model using the unemployment initial claims data 
+base_line <- lm(log(sa) ~ log(lag_week), data=unemployment_initial)
+
+# Preview of baseline model results
+tidy(base_line)
+glance(base_line)
+
+```
+
+Trendline regression: AR-1 model on the log of initial claims and trends data
+
+```{r trendline-model_unemp, message=FALSE}
+
+# Compute the trendline model using the unemployment initial claims data 
+trend_line <- lm(log(sa) ~ log(lag_week) + sa_job + sa_welfare, data=unemployment_initial)
+
+# Preview of trendline model results
+tidy(trend_line)
+glance(trend_line)
+
+```
